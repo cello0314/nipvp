@@ -1,5 +1,11 @@
 # nipvp
+
 A plugin that turns the Co-op mode into a PvP mode for Naruto Shippuden: Ultimate Ninja Impact.
+
+<img width="480" height="272" alt="ULUS10582_00007" src="https://github.com/user-attachments/assets/08cec14a-bc52-4ce2-9326-bee0768e009c" /><br>
+<img width="480" height="272" alt="NPJH50435_00022" src="https://github.com/user-attachments/assets/62699d04-bf35-4d19-a7f3-0ad466bee556" /><br>
+<img width="480" height="272" alt="NPJH50435_00024" src="https://github.com/user-attachments/assets/8cc05732-f35b-4630-850d-03ddf0767d43" />
+
 ## Features
 - PvP mode.
 - Removes all other enimies.
