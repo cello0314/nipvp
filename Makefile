@@ -1,7 +1,7 @@
 TARGET = nipvp
 OBJS = main.o
 
-CFLAGS = -O2 -Os -G0 -Wall -fshort-wchar -fno-pic -mno-check-zero-division
+CFLAGS = -O2 -Os -G0 -Wall -fshort-wchar -fno-pic -mno-check-zero-division -std=gnu99
 ASFLAGS = $(CFLAGS)
 
 BUILD_PRX = 1

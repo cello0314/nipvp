@@ -72,9 +72,9 @@ typedef struct {
     int ori_inst;
 } Patch;
 
-#define FUNC_HOOK_NUM 6
+#define FUNC_HOOK_NUM 9
 
-#define MAX_INST_PATCHES 23
+#define MAX_INST_PATCHES 90
 #define MAX_PATCHES      (FUNC_HOOK_NUM + MAX_INST_PATCHES + 1)
 
 static Patch instruction_patch_set1[] = {
@@ -84,6 +84,81 @@ static Patch instruction_patch_set1[] = {
     {0x08888A7C, 0x00000000},
     {0x0888D3AC, 0x00000000},
     {0x0888D544, 0x00000000},
+    {0x08B95460, 0x0029009D},
+    {0x08B95464, 0x009E0003},
+    {0x08B95468, 0x00040029},
+    {0x08B9546C, 0x0029009F},
+    {0x08B95470, 0x00A50005},
+    {0x08B95474, 0x00060029},
+    {0x08B95478, 0x002900A5},
+    {0x08B9547C, 0x00A30007},
+    {0x08B95480, 0x00080029},
+    {0x08B95484, 0x002900A3},
+    {0x0886B460, 0xC60C09EC},
+    {0x0886B464, 0xC60D12EC},
+    {0x0886B468, 0x460C6300},
+    {0x0886B46C, 0x460D6301},
+    {0x0886B470, 0xE60C12EC},
+    {0x0886B474, 0x10000005},
+    {0x0886B478, 0x00000000},
+    // 2P Awakening Bar (separate background below gauge; frame above)
+    // Disable inherited cutscene face culling for mirrored HUD sprites.
+    {0x0886A88C, 0x34040005},
+    // COM Chakra: use original action costs and shared recovery; keep AI decisions.
+    {0x0888F710, 0x00000000},
+    {0x08893A04, 0x00000000},
+    {0x0886EE7C, 0x34040060},
+    {0x0886EE80, 0xACA44FC8},
+    {0x0886EE84, 0xACA04FD4},
+    {0x0886EE88, 0x3C04BF80},
+    {0x0886EE8C, 0xAE04015C},
+    {0x0886EE90, 0x3C044350},
+    {0x0886EE94, 0x44846000},
+    {0x0886EE98, 0x3C04C2CC},
+    {0x0886EE9C, 0x44847000},
+    {0x0886EEA0, 0xE60C0154},
+    {0x0886EEA4, 0xE60E0158},
+    // Hide misplaced 2P awakening prompts
+    {0x0886BAD4, 0x2AC40082},
+    {0x0886BAE8, 0x2AC40082},
+    {0x0886BAFC, 0x2AC40082},
+    {0x0886BB04, 0x2AC40082},
+    {0x0886BB14, 0x2AC40082},
+    {0x08B954FC, 0x01280049},
+    // Disable Awakening Hit Immunity (only hit mode 1; preserve other modes)
+    {0x08892D10, 0x92410826},
+    {0x08892D14, 0x00410826},
+    {0x08892D18, 0x0001100A},
+    {0x08892D1C, 0xA2420827},
+    // Disable Awakening Invincibility (keep non-awakening damage vetoes)
+    {0x08896394, 0x92010826},
+    {0x08896398, 0x0001100B},
+    {0x0889639C, 0x144000AE},
+    {0x088963A0, 0x86350006},
+    {0x088963A4, 0x1AA0000E},
+    // Time-based Awakening: disable attack/hit and item gauge gains
+    {0x08892E38, 0x03E00008},
+    {0x08892E3C, 0x00000000},
+    {0x088816C0, 0x1000000A},
+    // Awakening in Tag Mode (load CG resources for both player slots)
+    {0x0886E8EC, 0x00000000},
+    {0x0886EE74, 0x34050098}, // Keep 0x98: 0x9C moves the Lv anchors.
+    {0x0888C750, 0x00000000},
+    {0x0893622C, 0x00000000}, // CWCheat 16-bit zero; verified upper half is also zero.
+    {0x0883BE00, 0x2413FFFE},
+    {0x0883BE0C, 0x26640002},
+    {0x0883BE18, 0x26640002},
+    {0x0883BE38, 0x10400033},
+    {0x0883BE3C, 0x26730001},
+    {0x0883BEEC, 0xAC920008},
+    {0x0883BEF0, 0x8E250000},
+    {0x0883BEF4, 0x8CA60004},
+    {0x0883BEF8, 0xAC850000},
+    {0x0883BEFC, 0xAC860004},
+    {0x0883BF00, 0xACC40000},
+    {0x0883BF04, 0xACA40004},
+    {0x0883BF08, 0x0660FFBF},
+    {0x0883BF0C, 0x00000000},
     // Better Ending
     {0x08938E00, 0x00000000},
     // No more cache!
@@ -105,12 +180,12 @@ static Patch instruction_patch_set1[] = {
     // Ad-Hoc matching port
     {0x088117e8, 0x34060002},
     {0x088116f4, 0x34060002},
-    // 1P Balance
-    {0x08892864, 0x34050180},
-    {0x08892860, 0x34040080},
-    // 2P Balance
-    {0x08892A04, 0x34050180},
-    {0x08892A00, 0x34040080},
+    // 1P Balance - load per-character Lv99/2 stats
+    {0x08892864, 0x97A50054},
+    {0x08892860, 0x97A40056},
+    // 2P Balance - load per-character Lv99/2 stats
+    {0x08892A04, 0x97A50114},
+    {0x08892A00, 0x97A40116},
     // DEF Balance
     {0x08896258, 0x34020150},
     {}, // end
@@ -123,6 +198,81 @@ static Patch instruction_patch_set2[] = {
     {0x088893AC, 0x00000000},
     {0x0888DCDC, 0x00000000},
     {0x0888DE74, 0x00000000},
+    {0x08B96670, 0x0029009D},
+    {0x08B96674, 0x009E0003},
+    {0x08B96678, 0x00040029},
+    {0x08B9667C, 0x0029009F},
+    {0x08B96680, 0x00A50005},
+    {0x08B96684, 0x00060029},
+    {0x08B96688, 0x002900A5},
+    {0x08B9668C, 0x00A30007},
+    {0x08B96690, 0x00080029},
+    {0x08B96694, 0x002900A3},
+    {0x0886BD90, 0xC60C09EC},
+    {0x0886BD94, 0xC60D12EC},
+    {0x0886BD98, 0x460C6300},
+    {0x0886BD9C, 0x460D6301},
+    {0x0886BDA0, 0xE60C12EC},
+    {0x0886BDA4, 0x10000005},
+    {0x0886BDA8, 0x00000000},
+    // 2P Awakening Bar (separate background below gauge; frame above)
+    // Disable inherited cutscene face culling for mirrored HUD sprites.
+    {0x0886B1BC, 0x34040005},
+    // COM Chakra: use original action costs and shared recovery; keep AI decisions.
+    {0x08890040, 0x00000000},
+    {0x08894334, 0x00000000},
+    {0x0886F7AC, 0x34040060},
+    {0x0886F7B0, 0xACA44FC8},
+    {0x0886F7B4, 0xACA04FD4},
+    {0x0886F7B8, 0x3C04BF80},
+    {0x0886F7BC, 0xAE04015C},
+    {0x0886F7C0, 0x3C044350},
+    {0x0886F7C4, 0x44846000},
+    {0x0886F7C8, 0x3C04C2CC},
+    {0x0886F7CC, 0x44847000},
+    {0x0886F7D0, 0xE60C0154},
+    {0x0886F7D4, 0xE60E0158},
+    // Hide misplaced 2P awakening prompts
+    {0x0886C404, 0x2AC40082},
+    {0x0886C418, 0x2AC40082},
+    {0x0886C42C, 0x2AC40082},
+    {0x0886C434, 0x2AC40082},
+    {0x0886C444, 0x2AC40082},
+    {0x08B9670C, 0x01280049},
+    // Disable Awakening Hit Immunity (only hit mode 1; preserve other modes)
+    {0x08893640, 0x92410826},
+    {0x08893644, 0x00410826},
+    {0x08893648, 0x0001100A},
+    {0x0889364C, 0xA2420827},
+    // Disable Awakening Invincibility (keep non-awakening damage vetoes)
+    {0x08896CC4, 0x92010826},
+    {0x08896CC8, 0x0001100B},
+    {0x08896CCC, 0x144000AE},
+    {0x08896CD0, 0x86350006},
+    {0x08896CD4, 0x1AA0000E},
+    // Time-based Awakening: disable attack/hit and item gauge gains
+    {0x08893768, 0x03E00008},
+    {0x0889376C, 0x00000000},
+    {0x08881FF0, 0x1000000A},
+    // Awakening in Tag Mode (load CG resources for both player slots)
+    {0x0886F21C, 0x00000000},
+    {0x0886F7A4, 0x34050098}, // Keep 0x98: 0x9C moves the Lv anchors.
+    {0x0888D080, 0x00000000},
+    {0x08936B5C, 0x00000000}, // CWCheat 16-bit zero; verified upper half is also zero.
+    {0x0883C730, 0x2413FFFE},
+    {0x0883C73C, 0x26640002},
+    {0x0883C748, 0x26640002},
+    {0x0883C768, 0x10400033},
+    {0x0883C76C, 0x26730001},
+    {0x0883C81C, 0xAC920008},
+    {0x0883C820, 0x8E250000},
+    {0x0883C824, 0x8CA60004},
+    {0x0883C828, 0xAC850000},
+    {0x0883C82C, 0xAC860004},
+    {0x0883C830, 0xACC40000},
+    {0x0883C834, 0xACA40004},
+    {0x0883C838, 0x0660FFBF},
+    {0x0883C83C, 0x00000000},
     // Better Ending
     {0x08939730, 0x00000000},
     // No more cache!
@@ -144,12 +294,12 @@ static Patch instruction_patch_set2[] = {
     // Ad-Hoc matching port
     {0x0881180c, 0x34060002},
     {0x08811718, 0x34060002},
-    // 1P Balance
-    {0x08893194, 0x34050180},
-    {0x08893190, 0x34040080},
-    // 2P Balance
-    {0x08893334, 0x34050180},
-    {0x08893330, 0x34040080},
+    // 1P Balance - load per-character Lv99/2 stats
+    {0x08893194, 0x97A50054},
+    {0x08893190, 0x97A40056},
+    // 2P Balance - load per-character Lv99/2 stats
+    {0x08893334, 0x97A50114},
+    {0x08893330, 0x97A40116},
     // DEF Balance
     {0x08896B88, 0x34020150},
     {}, // end
@@ -227,6 +377,7 @@ typedef struct {
 static int _counter = 0;
 #define counter USER_ALIAS_OF(_counter)
 
+
 void player_info_hook() {
 
     if (counter == 0) {
@@ -242,19 +393,102 @@ void player_info_hook() {
     asm volatile("jr $ra\n");
 }
 
+// Awakening and battle restart rerun this hook without player_info_hook.
+// Select the PvP faction from the controller identity, never shared call parity.
+// Local 1P (controller 0) uses faction 2; the COM partner uses faction 1.
 void player_info_hook_2() {
-    if (counter == 0) {
-        asm volatile (
-            "li   $a3, 0x2\n"
-            "sw   $a3, 0x538($s0)\n"
-            "sw   $a3, 0x8($s0)\n"
-        );
+    asm volatile (
+        "lw    $a3, 0x20($s0)\n"
+        "sltiu $a3, $a3, 1\n"
+        "addiu $a3, $a3, 1\n"
+        "sw    $a3, 0x538($s0)\n"
+        "sw    $a3, 0x8($s0)\n"
+        "jr    $ra\n"
+        "nop\n"
+    );
+}
+
+
+// The normal combat update runs at 30 simulation ticks/second.
+// Rate = (3 - 2 * HP/maxHP) full gauges per 90 seconds.
+// Keep fractional progress outside game actor memory; slots never share it.
+#define AWAKENING_FULL_HP_SECONDS 90
+#define AWAKENING_TICKS_PER_SECOND 30
+#define AWAKENING_RATE_SCALE 256U
+
+typedef struct {
+    int actor;
+    int last_gauge;
+    unsigned int remainder;
+} AwakeningCharge;
+static AwakeningCharge _awakening_charge[2];
+
+int awakening_charge_hook(int actor) {
+    AwakeningCharge *states = (AwakeningCharge *)USER_ADDR(&_awakening_charge);
+    int original = REF_BYTE(REGION_ADDR) == 0 ? 0x08896938 : 0x08897268;
+    int identity = REF(actor + 4);
+    if (identity == 1 || identity == 2) {
+        AwakeningCharge *state = &states[identity - 1];
+        int gauge = REF(actor + 0x7C0);
+        int maximum = REF(actor + 0x7D8);
+        int hp = REF(actor + 0x7B8);
+        int max_hp = REF(actor + 0x7D0);
+        int action = REF(actor + 0x60);
+        if (state->actor != actor || state->last_gauge != gauge) {
+            state->actor = actor;
+            state->remainder = 0;
+        }
+        if (REF_BYTE(actor + 0x826) || hp <= 0 || max_hp <= 0 ||
+            maximum <= 0 || gauge >= maximum) {
+            state->remainder = 0;
+        } else if (action != 0x101D && action != 0x201E) {
+            unsigned int ratio;
+            unsigned int points;
+            const unsigned int denominator = AWAKENING_FULL_HP_SECONDS *
+                AWAKENING_TICKS_PER_SECOND * AWAKENING_RATE_SCALE;
+            if (hp > max_hp) hp = max_hp;
+            ratio = (unsigned int)hp * AWAKENING_RATE_SCALE / (unsigned int)max_hp;
+            state->remainder += (unsigned int)maximum *
+                (3U * AWAKENING_RATE_SCALE - 2U * ratio);
+            points = state->remainder / denominator;
+            state->remainder %= denominator;
+            gauge += (int)points;
+            if (gauge >= maximum) {
+                gauge = maximum;
+                state->remainder = 0;
+            }
+            REF(actor + 0x7C0) = gauge;
+        }
+        state->last_gauge = gauge;
     }
-    counter++;
-    if (counter >= 2)
-        counter = 0;
-    
-    asm volatile("jr $ra\n");
+    // Keep the original awakening countdown and end-of-awakening result.
+    return ((int (*)(int))original)(actor);
+}
+
+// Normalize only battle stat queries. Keep profile level and experience.
+// Equipment stat additions are excluded so effective growth stats are Lv99/2.
+// Stat block mapping is the same as the game's base-stat builder.
+int level99_balance_hook(int *profile, int character, int form, unsigned char *out) {
+    unsigned short growth[12];
+    int jp = REF_BYTE(REGION_ADDR) == 0;
+    int query = 0x08A620CC - jp * 0x85C;
+    int growth_query = 0x08A61560 - jp * 0x85C;
+    int result = ((int (*)(int *, int, int, unsigned char *))query)
+        (profile, character, form, out);
+    int i;
+    ((void (*)(unsigned short *, int, int))growth_query)(growth, character, 99);
+    for (i = 0; i < 10; ++i) {
+        int stat = i + 1 - 2 * (i >= 5) + ((unsigned int)(i - 6) < 2) - (i >= 8) + (i == 9);
+        unsigned short *base = (unsigned short *)(out + 0x2C + i * 2);
+        unsigned short *effective = (unsigned short *)(out + 0x50 + i * 2);
+        int value = growth[stat];
+        // Match the original stat cap; index 2 has no 999 cap.
+        if (i != 2 && value > 999) value = 999;
+        value /= 2;
+        *base = value;
+        *effective = value;
+    }
+    return result;
 }
 
 void set_attack_value_hook() {
@@ -414,6 +648,7 @@ void _start(int ignore_mode) {
     if (!is_patched && (IS_TAG_MODE || ignore_mode)) {
         is_patched = 1;
         int hook_i = 0;
+        trampolines_used_count = 0;
         
         if (REF_BYTE(REGION_ADDR) == 0x0) {
             patches[hook_i++] = (Patch) {PLAYER_INIT_HOOK_ADDR_JPN, J_USER(&player_info_hook)};
@@ -422,6 +657,9 @@ void _start(int ignore_mode) {
             patches[hook_i++] = (Patch) {PLAYER_1_SET_POS_HOOK_ADDR_JPN, J_USER(&set_p1_pos_hook)};
             patches[hook_i++] = (Patch) {PLAYER_2_SET_POS_HOOK_ADDR_JPN, J_USER(&set_p2_pos_hook)};
             patches[hook_i++] = (Patch) {SET_ATTACK_VALUE_HOOK_ADDR_JPN, J_USER(&set_attack_value_hook)};
+            patches[hook_i++] = (Patch) {0x089570A8, J_USER(&awakening_charge_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x08892858, J_USER(&level99_balance_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x088929F8, J_USER(&level99_balance_hook) | 0x04000000};
         }
         else{
             patches[hook_i++] = (Patch) {PLAYER_INIT_HOOK_ADDR_USA, J_USER(&player_info_hook)};
@@ -430,6 +668,9 @@ void _start(int ignore_mode) {
             patches[hook_i++] = (Patch) {PLAYER_1_SET_POS_HOOK_ADDR_USA, J_USER(&set_p1_pos_hook)};
             patches[hook_i++] = (Patch) {PLAYER_2_SET_POS_HOOK_ADDR_USA, J_USER(&set_p2_pos_hook)};
             patches[hook_i++] = (Patch) {SET_ATTACK_VALUE_HOOK_ADDR_USA, J_USER(&set_attack_value_hook)};
+            patches[hook_i++] = (Patch) {0x089579D8, J_USER(&awakening_charge_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x08893188, J_USER(&level99_balance_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x08893328, J_USER(&level99_balance_hook) | 0x04000000};
         }
         
         for (Patch *patch = patches; patch->addr; patch++) {
