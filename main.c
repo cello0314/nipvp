@@ -74,7 +74,7 @@ typedef struct {
 
 #define FUNC_HOOK_NUM 9
 
-#define MAX_INST_PATCHES 90
+#define MAX_INST_PATCHES 91
 #define MAX_PATCHES      (FUNC_HOOK_NUM + MAX_INST_PATCHES + 1)
 
 static Patch instruction_patch_set1[] = {
@@ -161,6 +161,8 @@ static Patch instruction_patch_set1[] = {
     {0x0883BF0C, 0x00000000},
     // Better Ending
     {0x08938E00, 0x00000000},
+    // Skip Ninja Info Card Exchange (Ninshikirei)
+    {0x089EA55C, 0x00000000},
     // No more cache!
     {0x08939054, 0x00000000},
     {0x08938E10, 0x34040034},
@@ -275,6 +277,8 @@ static Patch instruction_patch_set2[] = {
     {0x0883C83C, 0x00000000},
     // Better Ending
     {0x08939730, 0x00000000},
+    // Skip Ninja Info Card Exchange (Ninshikirei)
+    {0x089EB0AC, 0x00000000},
     // No more cache!
     {0x08939984, 0x00000000},
     {0x08939740, 0x34040034},
@@ -378,36 +382,63 @@ static int _counter = 0;
 #define counter USER_ALIAS_OF(_counter)
 
 
-void player_info_hook() {
+// Two descriptor initializations start a new player pair. Repeated actor
+// rebuilds reuse the first assignment, without consuming shared call parity.
+typedef struct { int actor; int identity; int controller; int faction; } FactionAssignment;
+static FactionAssignment _faction_assignments[2];
+static unsigned int _descriptor_phase;
 
+void player_info_hook() {
+    unsigned int *phase = (unsigned int *)USER_ADDR(&_descriptor_phase);
+    FactionAssignment *slots = (FactionAssignment *)USER_ADDR(&_faction_assignments);
+    if (*phase == 0) {
+        slots[0].actor = 0;
+        slots[1].actor = 0;
+    }
+    *phase ^= 1;
     if (counter == 0) {
         asm volatile (
-            "li   $a3, 0x2\n"
-            "sw   $a3, 0xA4($s0)\n"
+            "li $a3, 2\n"
+            "sw $a3, 0xA4($s0)\n"
+            : : : "a3", "memory"
         );
     }
-    counter++;
-    if (counter >= 2)
-        counter = 0;
-    
-    asm volatile("jr $ra\n");
+    counter = (counter + 1) & 1;
 }
 
-// Awakening and battle restart rerun this hook without player_info_hook.
-// Select the PvP faction from the controller identity, never shared call parity.
-// Local 1P (controller 0) uses faction 2; the COM partner uses faction 1.
 void player_info_hook_2() {
-    asm volatile (
-        "lw    $a3, 0x20($s0)\n"
-        "sltiu $a3, $a3, 1\n"
-        "addiu $a3, $a3, 1\n"
-        "sw    $a3, 0x538($s0)\n"
-        "sw    $a3, 0x8($s0)\n"
-        "jr    $ra\n"
-        "nop\n"
-    );
+    int actor;
+    FactionAssignment *slots = (FactionAssignment *)USER_ADDR(&_faction_assignments);
+    FactionAssignment *slot;
+    asm volatile ("move %0, $s0" : "=r"(actor));
+    // Identity is only a cache key; faction still comes from original parity.
+    int identity = REF(actor + 4);
+    int controller = REF(actor + 0x20);
+    unsigned int index = (unsigned int)(identity - 1);
+    if (index < 2) {
+        slot = &slots[index];
+        // Awakening replaces the actor allocation; slot identity survives.
+        if (slot->actor != 0 && slot->identity == identity &&
+            slot->controller == controller) {
+            slot->actor = actor;
+            REF(actor + 0x538) = slot->faction;
+            REF(actor + 8) = slot->faction;
+            return;
+        }
+    }
+    if (counter == 0) {
+        REF(actor + 0x538) = 2;
+        REF(actor + 8) = 2;
+    }
+    counter = (counter + 1) & 1;
+    if (index < 2) {
+        slot = &slots[index];
+        slot->actor = actor;
+        slot->identity = identity;
+        slot->controller = controller;
+        slot->faction = REF(actor + 8);
+    }
 }
-
 
 // The normal combat update runs at 30 simulation ticks/second.
 // Rate = (3 - 2 * HP/maxHP) full gauges per 90 seconds.
