@@ -65,6 +65,7 @@ static int IS_TAG_MODE = 0;
 
 extern char __executable_start;
 extern char end;
+extern char _ftext, _etext;
 
 typedef struct {
     int addr;
@@ -72,9 +73,9 @@ typedef struct {
     int ori_inst;
 } Patch;
 
-#define FUNC_HOOK_NUM 9
+#define FUNC_HOOK_NUM 10
 
-#define MAX_INST_PATCHES 91
+#define MAX_INST_PATCHES 103
 #define MAX_PATCHES      (FUNC_HOOK_NUM + MAX_INST_PATCHES + 1)
 
 static Patch instruction_patch_set1[] = {
@@ -107,6 +108,22 @@ static Patch instruction_patch_set1[] = {
     // COM Chakra: use original action costs and shared recovery; keep AI decisions.
     {0x0888F710, 0x00000000},
     {0x08893A04, 0x00000000},
+    // COM AI: allow ally ultimate requests and native awakening preparation.
+    {0x0888C768, 0x00000000},
+    {0x088A1430, 0x1000002A},
+    // Charge must read the held input, not COM's random 15-tick hold timer.
+    {0x088A1504, 0x8E040424},
+    {0x088A1508, 0x9482001E},
+    {0x088A150C, 0x3842000F},
+    {0x088A1510, 0x14400011},
+    {0x088A165C, 0x8E040424},
+    {0x088A1660, 0x9482001E},
+    {0x088A1664, 0x3842000F},
+    {0x088A1668, 0x1440000D},
+    // COM AI Difficulty: use the mission menu's native four tiers (0..3).
+    // Keep the native difficulty/rank scaling table instead of forcing its cap.
+    {0x08B13D68, 0x0A20FAC6},
+    {0x08B13D6C, 0x00000000},
     {0x0886EE7C, 0x34040060},
     {0x0886EE80, 0xACA44FC8},
     {0x0886EE84, 0xACA04FD4},
@@ -223,6 +240,22 @@ static Patch instruction_patch_set2[] = {
     // COM Chakra: use original action costs and shared recovery; keep AI decisions.
     {0x08890040, 0x00000000},
     {0x08894334, 0x00000000},
+    // COM AI: allow ally ultimate requests and native awakening preparation.
+    {0x0888D098, 0x00000000},
+    {0x088A1D60, 0x1000002A},
+    // Charge must read the held input, not COM's random 15-tick hold timer.
+    {0x088A1E34, 0x8E040424},
+    {0x088A1E38, 0x9482001E},
+    {0x088A1E3C, 0x3842000F},
+    {0x088A1E40, 0x14400011},
+    {0x088A1F8C, 0x8E040424},
+    {0x088A1F90, 0x9482001E},
+    {0x088A1F94, 0x3842000F},
+    {0x088A1F98, 0x1440000D},
+    // COM AI Difficulty: use the mission menu's native four tiers (0..3).
+    // Keep the native difficulty/rank scaling table instead of forcing its cap.
+    {0x08B14648, 0x0A20FD12},
+    {0x08B1464C, 0x00000000},
     {0x0886F7AC, 0x34040060},
     {0x0886F7B0, 0xACA44FC8},
     {0x0886F7B4, 0xACA04FD4},
@@ -388,12 +421,26 @@ typedef struct { int actor; int identity; int controller; int faction; } Faction
 static FactionAssignment _faction_assignments[2];
 static unsigned int _descriptor_phase;
 
+typedef struct {
+    int actor;
+    int controller;
+    int last_hp;
+    int cooldown;
+    int remaining;
+    int entered_charge;
+} ComAwakeningAttempt;
+static ComAwakeningAttempt _com_awakening_attempt[2];
+
 void player_info_hook() {
     unsigned int *phase = (unsigned int *)USER_ADDR(&_descriptor_phase);
     FactionAssignment *slots = (FactionAssignment *)USER_ADDR(&_faction_assignments);
     if (*phase == 0) {
+        ComAwakeningAttempt *attempts = (ComAwakeningAttempt *)USER_ADDR(&_com_awakening_attempt);
         slots[0].actor = 0;
         slots[1].actor = 0;
+        // A new match may reuse exactly the same actor/controller allocations.
+        attempts[0].actor = 0;
+        attempts[1].actor = 0;
     }
     *phase ^= 1;
     if (counter == 0) {
@@ -494,6 +541,97 @@ int awakening_charge_hook(int actor) {
     }
     // Keep the original awakening countdown and end-of-awakening result.
     return ((int (*)(int))original)(actor);
+}
+
+// Replace the ally controller's unconditional "suppress ultimate" query.
+// The AI already requests ultimates; returning zero lets that request through.
+// Supplement its charge decision only during an opening. A failed attempt
+// releases the input and returns control to normal combat before retrying.
+#define COM_AWAKENING_RETRY_TICKS 90
+#define COM_AWAKENING_ATTEMPT_TICKS 120
+#define COM_AWAKENING_ENTER_GRACE_TICKS 15
+// Nonnegative IEEE-754 distances: 120 and 80 game units. Integer comparisons
+// avoid absolute constant-pool references in the relocated user-space copy.
+#define COM_AWAKENING_START_DISTANCE_BITS 0x42F00000U
+#define COM_AWAKENING_ABORT_DISTANCE_BITS 0x42A00000U
+
+int com_ai_specials_hook(int controller) {
+    ComAwakeningAttempt *attempts = (ComAwakeningAttempt *)USER_ADDR(&_com_awakening_attempt);
+    ComAwakeningAttempt *state;
+    int actor = REF(controller + 0x4C);
+    int brain = REF(controller + 0x48);
+    int identity, hp, damaged, maximum, action, flags, ready_action;
+    unsigned int distance;
+    if (!actor || !brain) return 0;
+    identity = REF(actor + 4);
+    if ((unsigned int)(identity - 1) >= 2 || REF(actor + 0x20) != -1)
+        return 0;
+    state = &attempts[identity - 1];
+    hp = REF(actor + 0x7B8);
+    if (state->actor != actor || state->controller != controller) {
+        state->actor = actor;
+        state->controller = controller;
+        state->last_hp = hp;
+        state->cooldown = AWAKENING_TICKS_PER_SECOND;
+        state->remaining = 0;
+        state->entered_charge = 0;
+    }
+    damaged = hp < state->last_hp;
+    state->last_hp = hp;
+    if (damaged) goto cancel_charge;
+    if (state->cooldown > 0) {
+        --state->cooldown;
+        return 0;
+    }
+    maximum = REF(actor + 0x7D8);
+    if (hp <= 0 || REF_BYTE(actor + 0x826) ||
+        (REF(actor + 0x204) & 0x04000000) ||
+        maximum <= 0 || REF(actor + 0x7C0) < maximum) {
+        if (state->remaining) goto cancel_charge;
+        return 0;
+    }
+    action = REF(actor + 0x60);
+    flags = REF_BYTE(brain + 0x111);
+    distance = (unsigned int)REF(brain + 0x50);
+    ready_action = action == 0x1003 || action == 0x1004 ||
+                   action == 0x1006 || action == 0x101E;
+    if (state->remaining) {
+        // Distance hysteresis prevents rapid start/cancel oscillation.
+        // Reject invalid targets, negative distances, infinity and NaN.
+        if (REF(brain + 0xCC) <= 0 || REF(brain + 0xCC) == identity ||
+            distance > 0x7F7FFFFFU || distance < COM_AWAKENING_ABORT_DISTANCE_BITS || !ready_action ||
+            (state->entered_charge && action != 0x101E) ||
+            state->remaining <= 1 ||
+            (!state->entered_charge && action != 0x101E &&
+             state->remaining <= COM_AWAKENING_ATTEMPT_TICKS - COM_AWAKENING_ENTER_GRACE_TICKS))
+            goto cancel_charge;
+        --state->remaining;
+    } else {
+        // Finish the current attack, dodge or recovery first. A native ultimate
+        // request takes priority over starting a new awakening attempt.
+        if (!ready_action || (flags & 4) ||
+            REF(brain + 0xCC) <= 0 || REF(brain + 0xCC) == identity ||
+            distance > 0x7F7FFFFFU ||
+            !(distance >= COM_AWAKENING_START_DISTANCE_BITS ||
+              ((flags & 8) && distance >= COM_AWAKENING_ABORT_DISTANCE_BITS)))
+            return 0;
+        state->remaining = COM_AWAKENING_ATTEMPT_TICKS;
+        state->entered_charge = 0;
+    }
+    if (action == 0x101E) state->entered_charge = 1;
+    REF_BYTE(brain + 0x111) = (flags & ~4) | 8;
+    return 0;
+
+cancel_charge:
+    if (state->remaining) {
+        REF_BYTE(brain + 0x111) &= ~8;
+        // Do not leave a 15-tick buffered press after cancelling our attempt.
+        REF_HALF_WORD(controller + 0x1E) = 0;
+    }
+    state->remaining = 0;
+    state->entered_charge = 0;
+    state->cooldown = COM_AWAKENING_RETRY_TICKS;
+    return 0;
 }
 
 // Normalize only battle stat queries. Keep profile level and experience.
@@ -691,6 +829,7 @@ void _start(int ignore_mode) {
             patches[hook_i++] = (Patch) {0x089570A8, J_USER(&awakening_charge_hook) | 0x04000000};
             patches[hook_i++] = (Patch) {0x08892858, J_USER(&level99_balance_hook) | 0x04000000};
             patches[hook_i++] = (Patch) {0x088929F8, J_USER(&level99_balance_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x08B13D70, J_USER(&com_ai_specials_hook)};
         }
         else{
             patches[hook_i++] = (Patch) {PLAYER_INIT_HOOK_ADDR_USA, J_USER(&player_info_hook)};
@@ -702,6 +841,7 @@ void _start(int ignore_mode) {
             patches[hook_i++] = (Patch) {0x089579D8, J_USER(&awakening_charge_hook) | 0x04000000};
             patches[hook_i++] = (Patch) {0x08893188, J_USER(&level99_balance_hook) | 0x04000000};
             patches[hook_i++] = (Patch) {0x08893328, J_USER(&level99_balance_hook) | 0x04000000};
+            patches[hook_i++] = (Patch) {0x08B14650, J_USER(&com_ai_specials_hook)};
         }
         
         for (Patch *patch = patches; patch->addr; patch++) {
@@ -736,6 +876,25 @@ void load_module_to_user_space() {
     SceUID block_id = sceKernelAllocPartitionMemory(PSP_MEMORY_PARTITION_USER, "", PSP_SMEM_High, elf_size, NULL);
     int user_text_addr = (u32)sceKernelGetBlockHeadAddr(block_id);
     memcpy((void*)user_text_addr, &__executable_start, elf_size);
+    // GCC can use absolute J instructions even for branches inside a function.
+    // Rebase internal code targets when copying the module out of kernel memory.
+    // Relative branches and calls outside this module retain their targets.
+    unsigned int original_base = (unsigned int)&__executable_start;
+    unsigned int text_begin = (unsigned int)&_ftext;
+    unsigned int text_end = (unsigned int)&_etext;
+    for (unsigned int pc = text_begin; pc < text_end; pc += 4) {
+        unsigned int inst = (unsigned int)REF(pc);
+        unsigned int op = inst >> 26;
+        if (op == 2 || op == 3) {
+            unsigned int target = ((pc + 4) & 0xF0000000U) |
+                                  ((inst & 0x03FFFFFFU) << 2);
+            if (target >= text_begin && target < text_end) {
+                unsigned int relocated = (unsigned int)user_text_addr + target - original_base;
+                patch_instruction(user_text_addr + pc - original_base,
+                                  (inst & 0xFC000000U) | ((relocated >> 2) & 0x03FFFFFFU));
+            }
+        }
+    }
     init(user_text_addr);
 }
 
