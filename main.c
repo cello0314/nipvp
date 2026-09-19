@@ -1,5 +1,6 @@
 #include <pspsdk.h>
 #include <pspkernel.h>
+#include <psputilsforkernel.h>
 #include <pspctrl.h>
 #include <systemctrl.h>
 #include <string.h>
@@ -59,9 +60,6 @@ PSP_MODULE_INFO(MODULE_NAME, 0x1007, 1, 0);
 
 #define SET_GAME_MODE_HOOK_ADDR     (REF_BYTE(REGION_ADDR) == 0x0 ? SET_GAME_MODE_HOOK_ADDR_JPN     : SET_GAME_MODE_HOOK_ADDR_USA)
 #define LOAD_TAG_MODE_HOOK_ADDR     (REF_BYTE(REGION_ADDR) == 0x0 ? LOAD_TAG_MODE_HOOK_ADDR_JPN     : LOAD_TAG_MODE_HOOK_ADDR_USA)
-
-//#define IS_TAG_MODE (REF_BYTE(GAME_MODE_ADDR) == 0x02)
-static int IS_TAG_MODE = 0;
 
 extern char __executable_start;
 extern char end;
@@ -784,37 +782,55 @@ int _trampolines_used_count = 0;
 #define trampolines USER_ALIAS_OF(_trampolines)
 #define trampolines_used_count USER_ALIAS_OF(_trampolines_used_count)
 
+// These instructions are also executed from the user-space copy. Publish
+// generated code before a game hook can branch to it; PPSSPP hides stale-cache
+// failures that the PSP CPU can expose.
+static inline void publish_instruction(int addr) {
+    asm volatile (
+        "sync\n"
+        "cache 0x1a,0x0(%0)\n"
+        "cache 8,0x0(%0)\n"
+        "sync\n"
+        : : "r" (addr) : "memory"
+    );
+}
+
 int make_trampoline(int user_mode, int user_text_addr, int target) {
     int tramp_addr;
     if (user_mode) {
         tramp_addr = (int)(trampolines + trampolines_used_count++ * 3);
     } else {
         SceUID block_id = sceKernelAllocPartitionMemory(PSP_MEMORY_PARTITION_USER, "", PSP_SMEM_High, 12, NULL);
+        if (block_id < 0) return 0;
         tramp_addr = (int)sceKernelGetBlockHeadAddr(block_id);
+        if (!tramp_addr) {
+            sceKernelFreePartitionMemory(block_id);
+            return 0;
+        }
     }
     REF(tramp_addr) = 0x3c010000 | (user_text_addr >> 16); // lui at,addr_h
     REF(tramp_addr + 4) = J(target);
     REF(tramp_addr + 8) = 0x34210000 | (user_text_addr & 0x0000ffff); // ori at,at,addr_l
+    publish_instruction(tramp_addr);
+    publish_instruction(tramp_addr + 8);
     return tramp_addr;
 }
 
 
 inline static void patch_instruction(int addr, int inst) {
-    REF(addr) = inst;
-    asm(
-        "cache 0x1a,0x0(%0)\n"
-        "cache 8,0x0(%0)"
-        :
-        : "r" (addr)
-    );
+    *(volatile int *)addr = inst;
+    publish_instruction(addr);
 }
 
 static int _is_patched = 0;
 #define is_patched USER_ALIAS_OF(_is_patched)
 
 void _start(int ignore_mode) {
-    IS_TAG_MODE = REF_BYTE(REF_BYTE(REGION_ADDR) == 0x0 ? GAME_MODE_ADDR_JPN : GAME_MODE_ADDR_USA) == 0x02;
-    if (!is_patched && (IS_TAG_MODE || ignore_mode)) {
+    // This function runs in the relocated user copy. A normal global here
+    // retains its kernel address after memcpy (HI16/LO16 data relocations).
+    // The mode is only needed for this invocation, so never store it globally.
+    int is_tag_mode = REF_BYTE(REF_BYTE(REGION_ADDR) == 0x0 ? GAME_MODE_ADDR_JPN : GAME_MODE_ADDR_USA) == 0x02;
+    if (!is_patched && (is_tag_mode || ignore_mode)) {
         is_patched = 1;
         int hook_i = 0;
         trampolines_used_count = 0;
@@ -848,7 +864,7 @@ void _start(int ignore_mode) {
             patch->ori_inst = REF(patch->addr);
             patch_instruction(patch->addr, patch->inst);
         }
-    } else if (is_patched && !IS_TAG_MODE && !ignore_mode) {
+    } else if (is_patched && !is_tag_mode && !ignore_mode) {
         is_patched = 0;
 
         for (Patch *patch = patches; patch->addr; patch++) {
@@ -867,14 +883,22 @@ void tag_mode_entered_hook() {
 }
 
 void init(int user_text_addr) {
-    patch_instruction(SET_GAME_MODE_HOOK_ADDR, J(make_trampoline(0, user_text_addr, (char*)&mode_changed_hook - &__executable_start + user_text_addr)));
-    patch_instruction(LOAD_TAG_MODE_HOOK_ADDR, J(make_trampoline(0, user_text_addr, (char*)&tag_mode_entered_hook - &__executable_start + user_text_addr)));
+    int mode_trampoline = make_trampoline(0, user_text_addr, (char*)&mode_changed_hook - &__executable_start + user_text_addr);
+    int tag_trampoline = make_trampoline(0, user_text_addr, (char*)&tag_mode_entered_hook - &__executable_start + user_text_addr);
+    if (!mode_trampoline || !tag_trampoline) return;
+    patch_instruction(SET_GAME_MODE_HOOK_ADDR, J(mode_trampoline));
+    patch_instruction(LOAD_TAG_MODE_HOOK_ADDR, J(tag_trampoline));
 }
 
 void load_module_to_user_space() {
     int elf_size = &end - &__executable_start;
     SceUID block_id = sceKernelAllocPartitionMemory(PSP_MEMORY_PARTITION_USER, "", PSP_SMEM_High, elf_size, NULL);
+    if (block_id < 0) return;
     int user_text_addr = (u32)sceKernelGetBlockHeadAddr(block_id);
+    if (!user_text_addr) {
+        sceKernelFreePartitionMemory(block_id);
+        return;
+    }
     memcpy((void*)user_text_addr, &__executable_start, elf_size);
     // GCC can use absolute J instructions even for branches inside a function.
     // Rebase internal code targets when copying the module out of kernel memory.
@@ -895,6 +919,11 @@ void load_module_to_user_space() {
             }
         }
     }
+    // Publish the entire copied image (including data/BSS and generated code),
+    // not just the J/JAL words rebased above. These SDK calls run in the kernel
+    // loader, before either user-mode entry hook is installed.
+    sceKernelDcacheWritebackInvalidateAll();
+    sceKernelIcacheInvalidateAll();
     init(user_text_addr);
 }
 
